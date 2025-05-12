@@ -6,8 +6,6 @@ steps:
     - 'build'
     - '-t'
     - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}'
-    - '--file'
-    - 'Dockerfile.optimized'
     - '--build-arg'
     - 'BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')'
     - '--build-arg'
