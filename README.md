@@ -4,7 +4,46 @@ This repository contains a production-ready implementation of a Video Face Swap 
 
 ## Architecture
 
-![Architecture Diagram](docs/architecture.png)
+```mermaid
+graph TD
+    User[Client/User] -->|HTTP Request| CR[Cloud Run Service]
+    CR -->|Store/Retrieve| CS[Cloud Storage]
+    CR -->|Log Events| CL[Cloud Logging]
+    CR -->|Metrics| CM[Cloud Monitoring]
+    
+    subgraph "GCP Infrastructure"
+        CR
+        CS
+        CL
+        CM
+        AR[Artifact Registry]
+        CB[Cloud Build]
+    end
+    
+    subgraph "CI/CD Pipeline"
+        GH[GitHub Repo] -->|Trigger| CB
+        CB -->|Build Container| AR
+        CB -->|Deploy| CR
+        CB -->|Run Tests| TE[Test Environment]
+    end
+    
+    subgraph "Video Face Swap API"
+        API[Flask API] -->|Process| FS[Face Swapper]
+        API -->|Analyze| FA[Face Analyzer]
+        API -->|Health Check| HC[Health Endpoint]
+        API -->|Benchmark| BM[Benchmark Endpoint]
+    end
+    
+    CR -->|Run| API
+    
+    classDef gcp fill:#4285F4,stroke:#3367D6,color:white;
+    classDef api fill:#34A853,stroke:#0F9D58,color:white;
+    classDef cicd fill:#FBBC05,stroke:#F9AB00,color:white;
+    
+    class CR,CS,CL,CM,AR gcp;
+    class API,FS,FA,HC,BM api;
+    class GH,CB,TE cicd;
+```
 
 The application is built with the following GCP components:
 
