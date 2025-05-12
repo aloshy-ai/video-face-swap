@@ -1,111 +1,167 @@
 #!/bin/bash
-# setup.sh - Initialize the Video Face Swap API project
+# Video Face Swap API - Setup Script
+# This script helps with setting up the required GCP services
 
-set -e  # Exit on error
+set -e
 
-# Set default values
-PROJECT_ID="video-face-swap-459615"
+# Configuration
+PROJECT_ID=""
 REGION="us-central1"
 
-# Parse command line arguments
-while [[ $# -gt 0 ]]; do
-  key="$1"
-  case $key in
-    --project)
-      PROJECT_ID="$2"
-      shift 2
-      ;;
-    --region)
-      REGION="$2"
-      shift 2
-      ;;
-    --help)
-      echo "Usage: $0 [options]"
-      echo "Options:"
-      echo "  --project PROJECT_ID   GCP project ID (default: $PROJECT_ID)"
-      echo "  --region REGION        GCP region (default: $REGION)"
-      echo "  --help                 Show this help message"
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $1"
-      exit 1
-      ;;
-  esac
+# Color variables
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[0;33m'
+NC='\033[0m' # No Color
+
+# Print banner
+echo -e "${BLUE}=============================================${NC}"
+echo -e "${BLUE}  Video Face Swap API - GCP Setup Script     ${NC}"
+echo -e "${BLUE}=============================================${NC}"
+echo ""
+
+# Check if project ID is set
+if [ -z "$PROJECT_ID" ]; then
+    echo -e "${YELLOW}Project ID not set in script. Please enter your GCP Project ID:${NC}"
+    read PROJECT_ID
+    if [ -z "$PROJECT_ID" ]; then
+        echo -e "${RED}Project ID is required. Exiting.${NC}"
+        exit 1
+    fi
+fi
+
+echo -e "${GREEN}Project: ${NC}$PROJECT_ID"
+echo -e "${GREEN}Region:  ${NC}$REGION"
+echo ""
+
+# Function to check if command exists
+command_exists() {
+    command -v "$1" &> /dev/null
+}
+
+# Check for required tools
+echo -e "${BLUE}Checking for required tools...${NC}"
+MISSING_TOOLS=0
+
+if ! command_exists gcloud; then
+    echo -e "${RED}gcloud CLI not found. Please install: https://cloud.google.com/sdk/docs/install${NC}"
+    MISSING_TOOLS=1
+fi
+
+if [ $MISSING_TOOLS -eq 1 ]; then
+    echo -e "${RED}Missing required tools. Please install them and try again.${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}All required tools are installed.${NC}"
+
+# Ask for confirmation
+echo ""
+echo -e "${YELLOW}This script will enable required GCP APIs and set up initial resources for the Video Face Swap API.${NC}"
+echo -e "${YELLOW}Do you want to continue? (y/N)${NC}"
+read CONFIRM
+if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
+    echo -e "${BLUE}Setup cancelled.${NC}"
+    exit 0
+fi
+
+# Check if user is authenticated with gcloud
+echo -e "${BLUE}Checking gcloud authentication...${NC}"
+GCLOUD_AUTH=$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null)
+if [ -z "$GCLOUD_AUTH" ]; then
+    echo -e "${YELLOW}You're not authenticated with gcloud. Initiating login...${NC}"
+    gcloud auth login
+fi
+
+# Set the project
+echo -e "${BLUE}Setting project to $PROJECT_ID...${NC}"
+gcloud config set project $PROJECT_ID
+
+# Enable required APIs
+echo -e "${BLUE}Enabling required GCP APIs...${NC}"
+APIS=(
+    "run.googleapis.com"              # Cloud Run
+    "artifactregistry.googleapis.com" # Artifact Registry
+    "storage.googleapis.com"          # Cloud Storage
+    "cloudbuild.googleapis.com"       # Cloud Build
+    "iam.googleapis.com"              # IAM
+    "monitoring.googleapis.com"       # Cloud Monitoring
+    "logging.googleapis.com"          # Cloud Logging
+    "secretmanager.googleapis.com"    # Secret Manager (optional)
+    "containerscanning.googleapis.com" # Container Scanning
+)
+
+for api in "${APIS[@]}"; do
+    echo -e "  Enabling $api..."
+    gcloud services enable $api --project=$PROJECT_ID
 done
 
-echo "===== Video Face Swap API Setup ====="
-echo "Project: $PROJECT_ID"
-echo "Region: $REGION"
-echo "======================================"
-
-# Ensure the user is logged in to gcloud
-echo "Checking gcloud authentication..."
-gcloud auth list --filter=status:ACTIVE --format="value(account)" || {
-  echo "Please run 'gcloud auth login' to authenticate with Google Cloud."
-  exit 1
-}
-
-# Verify the project exists and is accessible
-echo "Verifying project..."
-gcloud projects describe $PROJECT_ID &>/dev/null || {
-  echo "Project $PROJECT_ID does not exist or you do not have access to it."
-  exit 1
-}
-
-# Set the default project and region
-echo "Setting default project and region..."
-gcloud config set project $PROJECT_ID
-gcloud config set run/region $REGION
-
-# Enable necessary APIs
-echo "Enabling necessary APIs..."
-gcloud services enable \
-  artifactregistry.googleapis.com \
-  run.googleapis.com \
-  cloudbuild.googleapis.com \
-  storage.googleapis.com \
-  iam.googleapis.com \
-  monitoring.googleapis.com
-
 # Create Artifact Registry repository
-echo "Creating Artifact Registry repository..."
-gcloud artifacts repositories create video-face-swap \
-  --repository-format=docker \
-  --location=$REGION \
-  --description="Docker repository for Video Face Swap API" \
-  --project=$PROJECT_ID || {
-  echo "Repository already exists or there was an error creating it."
-}
+echo -e "${BLUE}Creating Artifact Registry repository...${NC}"
+if gcloud artifacts repositories describe video-face-swap --location=$REGION --project=$PROJECT_ID &> /dev/null; then
+    echo -e "${YELLOW}Artifact Registry repository 'video-face-swap' already exists.${NC}"
+else
+    gcloud artifacts repositories create video-face-swap \
+        --repository-format=docker \
+        --location=$REGION \
+        --description="Video Face Swap API repository" \
+        --project=$PROJECT_ID
+    echo -e "${GREEN}Created Artifact Registry repository 'video-face-swap'.${NC}"
+fi
 
-# Create a service account for Terraform (optional)
-echo "Creating service account for Terraform..."
-gcloud iam service-accounts create terraform-account \
-  --display-name="Terraform Service Account" \
-  --project=$PROJECT_ID || {
-  echo "Service account already exists or there was an error creating it."
-}
+# Create Storage bucket
+BUCKET_NAME="${PROJECT_ID}-vfs-temp"
+echo -e "${BLUE}Creating Cloud Storage bucket '$BUCKET_NAME'...${NC}"
+if gsutil ls -p $PROJECT_ID gs://$BUCKET_NAME &> /dev/null; then
+    echo -e "${YELLOW}Cloud Storage bucket '$BUCKET_NAME' already exists.${NC}"
+else
+    gsutil mb -l $REGION -p $PROJECT_ID gs://$BUCKET_NAME
+    echo -e "${GREEN}Created Cloud Storage bucket '$BUCKET_NAME'.${NC}"
+    
+    # Set lifecycle policy for temporary files
+    echo '{
+        "rule": [
+            {
+                "action": {"type": "Delete"},
+                "condition": {"age": 1}
+            }
+        ]
+    }' > /tmp/lifecycle_config.json
+    
+    gsutil lifecycle set /tmp/lifecycle_config.json gs://$BUCKET_NAME
+    echo -e "${GREEN}Set lifecycle policy to delete files after 1 day.${NC}"
+    
+    # Remove the temporary file
+    rm /tmp/lifecycle_config.json
+fi
 
-# Grant necessary permissions to the service account
-echo "Granting permissions to service account..."
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:terraform-account@$PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/editor"
+# Create service account for the API
+SA_NAME="video-face-swap-sa"
+SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
+echo -e "${BLUE}Creating service account '$SA_NAME'...${NC}"
 
-# Create a Cloud Storage bucket for Terraform state (optional)
-echo "Creating Cloud Storage bucket for Terraform state..."
-gsutil mb -l $REGION gs://$PROJECT_ID-terraform-state || {
-  echo "Bucket already exists or there was an error creating it."
-}
+if gcloud iam service-accounts describe $SA_EMAIL --project=$PROJECT_ID &> /dev/null; then
+    echo -e "${YELLOW}Service account '$SA_EMAIL' already exists.${NC}"
+else
+    gcloud iam service-accounts create $SA_NAME \
+        --display-name="Video Face Swap API Service Account" \
+        --description="Used by the Video Face Swap service to access GCP resources" \
+        --project=$PROJECT_ID
+    echo -e "${GREEN}Created service account '$SA_EMAIL'.${NC}"
+fi
 
-# Enable versioning on the bucket
-gsutil versioning set on gs://$PROJECT_ID-terraform-state
+# Grant Storage Object Admin role to the service account
+echo -e "${BLUE}Granting storage permissions to service account...${NC}"
+gsutil iam ch serviceAccount:$SA_EMAIL:objectAdmin gs://$BUCKET_NAME
+echo -e "${GREEN}Granted Storage Object Admin role to '$SA_EMAIL' for bucket '$BUCKET_NAME'.${NC}"
 
-# Uncomment the backend configuration in the Terraform files
-sed -i.bak 's/# backend "gcs" {/backend "gcs" {/' terraform/main.tf
-sed -i.bak 's/#   bucket = "video-face-swap-459615-terraform-state"/  bucket = "'$PROJECT_ID'-terraform-state"/' terraform/main.tf
-sed -i.bak 's/#   prefix = "terraform\/state"/  prefix = "terraform\/state"/' terraform/main.tf
-sed -i.bak 's/# }/}/' terraform/main.tf
-
-echo "Setup complete! You can now run the deploy script to deploy the application."
-echo "Run: ./scripts/deploy.sh"
+echo ""
+echo -e "${GREEN}Setup completed successfully!${NC}"
+echo -e "${BLUE}=============================================${NC}"
+echo -e "${BLUE}  Next Steps: ${NC}"
+echo -e "${BLUE}  1. Build and deploy the application using: ${NC}"
+echo -e "${BLUE}     ./deploy.sh ${NC}"
+echo -e "${BLUE}  2. For manual deployment, follow the steps in: ${NC}"
+echo -e "${BLUE}     ../docs/deployment_guide.md ${NC}"
+echo -e "${BLUE}=============================================${NC}"

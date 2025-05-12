@@ -1,36 +1,141 @@
 steps:
-# Build the container image
+# Build the container image with caching
 - name: 'gcr.io/cloud-builders/docker'
-  args: ['build', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}', '.']
+  id: 'build-image'
+  args:
+    - 'build'
+    - '-t'
+    - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}'
+    - '--build-arg'
+    - 'BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')'
+    - '--build-arg'
+    - 'VCS_REF=${SHORT_SHA}'
+    - '--build-arg'
+    - 'VERSION=${SHORT_SHA}'
+    - '--cache-from'
+    - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:latest'
+    - '.'
   timeout: '1800s'  # Extended timeout for model downloads during build
 
-# Push the container image to Artifact Registry
-- name: 'gcr.io/cloud-builders/docker'
-  args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}']
-
-# Create a tag for latest
-- name: 'gcr.io/cloud-builders/docker'
-  args: ['tag', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:latest']
-
-# Push the latest tag
-- name: 'gcr.io/cloud-builders/docker'
-  args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:latest']
-
-# Set up Terraform (download terraform if not installed in the builder)
-- name: 'gcr.io/cloud-builders/wget'
+# Run container security scan 
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'security-scan'
+  waitFor: ['build-image']
   entrypoint: 'bash'
   args:
     - '-c'
     - |
-      wget https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip
-      unzip terraform_1.5.7_linux_amd64.zip
-      chmod +x terraform
-      mkdir -p /workspace/bin
-      mv terraform /workspace/bin/
-      export PATH=$PATH:/workspace/bin
+      gcloud artifacts docker images scan ${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA} \
+        --format='json(response.scan)' > /workspace/scan_results.json
+      echo "Vulnerabilities found:"
+      cat /workspace/scan_results.json | jq -r '.response.scan.findings[] | select(.finding.severity=="CRITICAL") | .finding.vulnerability + " - " + .finding.severity' || true
+      
+      # Check for critical vulnerabilities and decide whether to proceed
+      CRITICAL_COUNT=$(cat /workspace/scan_results.json | jq -r '.response.scan.findings[] | select(.finding.severity=="CRITICAL") | .finding.vulnerability' | wc -l || echo "0")
+      if [ "$CRITICAL_COUNT" -gt "5" ]; then
+        echo "Too many critical vulnerabilities found: $CRITICAL_COUNT. Build failed."
+        exit 1
+      fi
+
+# Run basic unit/integration tests
+- name: '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}'
+  id: 'test-image'
+  waitFor: ['build-image']
+  entrypoint: 'python'
+  args: ['-m', 'pytest', 'test_app.py', '-v']
+  timeout: '300s'
+
+# Push the container image to Artifact Registry
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'push-image'
+  waitFor: ['test-image', 'security-scan']
+  args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}']
+
+# Create a tag for latest
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'tag-latest'
+  waitFor: ['push-image']
+  args: ['tag', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:latest']
+
+# Push the latest tag
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'push-latest'
+  waitFor: ['tag-latest']
+  args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:latest']
+
+# Set up Terraform
+- name: 'hashicorp/terraform:1.5.7'
+  id: 'terraform-init'
+  waitFor: ['push-latest']
+  entrypoint: 'sh'
+  args:
+    - '-c'
+    - |
       cd terraform
-      /workspace/bin/terraform init
-      /workspace/bin/terraform apply -auto-approve -var "project_id=${PROJECT_ID}" -var "region=${_REGION}" -var "container_image_url=${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}"
+      terraform init
+  env:
+    - 'TF_VAR_project_id=${PROJECT_ID}'
+    - 'TF_VAR_region=${_REGION}'
+
+# Terraform plan
+- name: 'hashicorp/terraform:1.5.7'
+  id: 'terraform-plan'
+  waitFor: ['terraform-init']
+  entrypoint: 'sh'
+  args:
+    - '-c'
+    - |
+      cd terraform
+      terraform plan -var "project_id=${PROJECT_ID}" -var "region=${_REGION}" -var "container_image_url=${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}" -out=tfplan
+  env:
+    - 'TF_VAR_project_id=${PROJECT_ID}'
+    - 'TF_VAR_region=${_REGION}'
+
+# Terraform apply
+- name: 'hashicorp/terraform:1.5.7'
+  id: 'terraform-apply'
+  waitFor: ['terraform-plan']
+  entrypoint: 'sh'
+  args:
+    - '-c'
+    - |
+      cd terraform
+      terraform apply -auto-approve tfplan
+  env:
+    - 'TF_VAR_project_id=${PROJECT_ID}'
+    - 'TF_VAR_region=${_REGION}'
+
+# Add Cloud Run revision tags and annotations
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'annotate-revision'
+  waitFor: ['terraform-apply']
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      # Get the latest revision name
+      REVISION=$(gcloud run services describe video-face-swap-api --region=${_REGION} --format="value(status.latestCreatedRevisionName)")
+      
+      # Add annotations to capture build info
+      gcloud run revisions update $REVISION \
+        --region=${_REGION} \
+        --update-annotations=build_id=${BUILD_ID},commit_sha=${SHORT_SHA},build_timestamp=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+# Run synthetic test against the deployed service
+- name: 'curlimages/curl:latest'
+  id: 'test-deployment'
+  waitFor: ['annotate-revision']
+  entrypoint: 'sh'
+  args:
+    - '-c'
+    - |
+      # Get the service URL
+      SERVICE_URL=$(gcloud run services describe video-face-swap-api --region=${_REGION} --format="value(status.url)")
+      
+      # Test health endpoint
+      curl -f "$${SERVICE_URL}/health" || exit 1
+      
+      echo "Deployment verified successfully"
 
 substitutions:
   _REGION: us-central1  # Default region, can be overridden
@@ -38,5 +143,15 @@ substitutions:
 images:
 - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}'
 - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:latest'
+
+artifacts:
+  objects:
+    location: 'gs://${PROJECT_ID}-vfs-temp/build-artifacts/${BUILD_ID}/'
+    paths: ['workspace/scan_results.json', 'terraform/tfplan']
+
+options:
+  machineType: 'E2_HIGHCPU_8'  # Use a higher-performance machine for faster builds
+  logging: CLOUD_LOGGING_ONLY
+  dynamicSubstitutions: true
 
 timeout: '2700s'  # 45 minutes

@@ -1,275 +1,209 @@
-# Video Face Swap API Deployment Guide
+# Video Face Swap API - Deployment Guide
 
-This guide outlines the steps to deploy the Video Face Swap API to Google Cloud Platform (GCP) using Artifact Registry and Cloud Run. The solution provides an API that allows clients to swap faces in images and videos with just a single reference face image.
-
-## Architecture Overview
-
-The solution follows the comprehensive AI PaaS architecture:
-
-- **API Management Layer**: Cloud API Gateway routes requests to our service
-- **AI Service Layer**: Custom container with Roop/InsightFace runs on Cloud Run
-- **Orchestration Layer**: Cloud Run Jobs for async processing of large videos
-- **Data & Storage Layer**: Cloud Storage for temporary files and caching
-- **Observability**: Cloud Monitoring and Logging for performance tracking
+This guide provides step-by-step instructions for deploying the Video Face Swap API on Google Cloud Platform.
 
 ## Prerequisites
 
-1. GCP Project with billing enabled
-2. GCP APIs enabled:
+Before you begin, ensure you have the following:
+
+1. **Google Cloud Platform Account** with billing enabled
+2. **Project** created in GCP with required APIs enabled:
    - Cloud Run API
    - Artifact Registry API
    - Cloud Build API
-   - Container Registry API
    - Cloud Storage API
-3. Required permissions:
-   - Cloud Run Admin
-   - Artifact Registry Writer
-   - Cloud Build Editor
-   - Storage Admin
+   - Cloud Monitoring API
+   - Secret Manager API (optional)
 
-## Deployment Steps
+3. **Local Development Environment** with:
+   - [gcloud CLI](https://cloud.google.com/sdk/docs/install) installed and configured
+   - [Docker](https://docs.docker.com/get-docker/) installed
+   - [Terraform](https://learn.hashicorp.com/tutorials/terraform/install-cli) v1.5+ installed
 
-### 1. Set Up Artifact Registry
+## Deployment Options
 
-Create a Docker repository in Artifact Registry:
+You can deploy the Video Face Swap API in several ways:
 
-```bash
-gcloud artifacts repositories create video-face-swap \
-    --repository-format=docker \
-    --location=us-central1 \
-    --description="Docker repository for Video Face Swap API"
-```
+1. **Automated deployment** using the provided script
+2. **Manual deployment** following the step-by-step instructions
+3. **CI/CD pipeline** using Cloud Build
 
-### 2. Configure Authentication
+## Option 1: Automated Deployment
 
-```bash
-gcloud auth configure-docker us-central1-docker.pkg.dev
-```
+The simplest way to deploy is using the provided deployment script:
 
-### 3. Clone the Repository and Prepare Files
+1. **Configure your environment**:
+   ```bash
+   # Authenticate with Google Cloud
+   gcloud auth login
+   
+   # Set default project
+   gcloud config set project YOUR_PROJECT_ID
+   ```
 
-```bash
-# Create a new directory
-mkdir -p video-face-swap-api
-cd video-face-swap-api
+2. **Run the deployment script**:
+   ```bash
+   cd scripts
+   ./deploy.sh
+   ```
 
-# Create the necessary files using the provided artifacts
-# - Dockerfile
-# - api.py
-# - cloudbuild.yaml
-# - test_client.py
-```
+3. **Follow the prompts** to complete the deployment.
 
-### 4. Manual Build and Deploy (Option 1)
+## Option 2: Manual Deployment
 
-If you prefer to build and deploy manually:
+### Step 1: Build the Docker Image
 
-```bash
-# Build the Docker image
-docker build -t us-central1-docker.pkg.dev/[PROJECT_ID]/video-face-swap/api:v1 .
+1. **Build the container image**:
+   ```bash
+   docker build -t video-face-swap-api:local .
+   ```
 
-# Push the image to Artifact Registry
-docker push us-central1-docker.pkg.dev/[PROJECT_ID]/video-face-swap/api:v1
+2. **Test the container locally** (optional):
+   ```bash
+   docker run -p 8080:8080 video-face-swap-api:local
+   ```
 
-# Deploy to Cloud Run
-gcloud run deploy video-face-swap-api \
-    --image us-central1-docker.pkg.dev/[PROJECT_ID]/video-face-swap/api:v1 \
-    --platform managed \
-    --region us-central1 \
-    --memory 4Gi \
-    --cpu 2 \
-    --min-instances 0 \
-    --max-instances 10 \
-    --concurrency 5 \
-    --timeout 900s
-```
+   Test the API at http://localhost:8080/health
 
-### 5. Automated CI/CD Build (Option 2)
+### Step 2: Push to Artifact Registry
 
-If you prefer to use Cloud Build for CI/CD:
+1. **Authenticate with Artifact Registry**:
+   ```bash
+   gcloud auth configure-docker us-central1-docker.pkg.dev
+   ```
 
-```bash
-# Submit a build to Cloud Build
-gcloud builds submit --config=cloudbuild.yaml .
-```
+2. **Create Artifact Registry repository** (if not exists):
+   ```bash
+   gcloud artifacts repositories create video-face-swap \
+     --repository-format=docker \
+     --location=us-central1 \
+     --description="Video Face Swap API repository"
+   ```
 
-### 6. Create a Cloud Storage Bucket for Temp Files (Optional)
+3. **Tag and push the image**:
+   ```bash
+   docker tag video-face-swap-api:local us-central1-docker.pkg.dev/YOUR_PROJECT_ID/video-face-swap/api:latest
+   docker push us-central1-docker.pkg.dev/YOUR_PROJECT_ID/video-face-swap/api:latest
+   ```
 
-```bash
-# Create a bucket for temporary files
-gsutil mb -l us-central1 gs://[PROJECT_ID]-video-face-swap-temp
+### Step 3: Deploy with Terraform
 
-# Set lifecycle policy to delete files after 1 day
-cat > lifecycle.json << EOL
-{
-  "rule": [
-    {
-      "action": {"type": "Delete"},
-      "condition": {"age": 1}
-    }
-  ]
-}
-EOL
+1. **Initialize Terraform**:
+   ```bash
+   cd terraform
+   terraform init
+   ```
 
-gsutil lifecycle set lifecycle.json gs://[PROJECT_ID]-video-face-swap-temp
-```
+2. **Apply the configuration**:
+   ```bash
+   terraform apply -var "project_id=YOUR_PROJECT_ID" \
+     -var "region=us-central1" \
+     -var "container_image_url=us-central1-docker.pkg.dev/YOUR_PROJECT_ID/video-face-swap/api:latest"
+   ```
 
-### 7. Configure API Gateway (Optional)
+3. **Verify the deployment**:
+   ```bash
+   # Get the service URL
+   terraform output service_url
+   
+   # Test the API
+   curl $(terraform output -raw service_url)/health
+   ```
 
-```bash
-# Create an API Config
-cat > api-config.yaml << EOL
-swagger: '2.0'
-info:
-  title: Video Face Swap API
-  description: API for swapping faces in images and videos
-  version: 1.0.0
-host: video-face-swap-api-gateway.endpoints.[PROJECT_ID].cloud.goog
-schemes:
-  - https
-produces:
-  - application/json
-paths:
-  /swap:
-    post:
-      operationId: faceSwap
-      summary: Swap faces in images or videos
-      x-google-backend:
-        address: https://video-face-swap-api-[REGION]-run.app/swap
-      consumes:
-        - multipart/form-data
-      parameters:
-        - name: source
-          in: formData
-          description: Source image with a face
-          required: true
-          type: file
-        - name: target
-          in: formData
-          description: Target image or video
-          required: true
-          type: file
-        - name: output_format
-          in: formData
-          description: Output format for videos
-          required: false
-          type: string
-          enum: [mp4, webm, mov, avi]
-        - name: keep_frames
-          in: formData
-          description: Keep temporary frames
-          required: false
-          type: boolean
-        - name: keep_fps
-          in: formData
-          description: Keep original FPS
-          required: false
-          type: boolean
-        - name: many_faces
-          in: formData
-          description: Process multiple faces
-          required: false
-          type: boolean
-        - name: skip_audio
-          in: formData
-          description: Skip audio in output
-          required: false
-          type: boolean
-      responses:
-        '200':
-          description: Successful operation
-        '400':
-          description: Invalid input
-        '500':
-          description: Server error
-  /health:
-    get:
-      operationId: healthCheck
-      summary: Check API health
-      x-google-backend:
-        address: https://video-face-swap-api-[REGION]-run.app/health
-      responses:
-        '200':
-          description: API is healthy
-EOL
+## Option 3: CI/CD Pipeline with Cloud Build
 
-# Deploy the API Gateway
-gcloud api-gateway api-configs create video-face-swap-config \
-    --api=video-face-swap-api \
-    --openapi-spec=api-config.yaml \
-    --project=[PROJECT_ID]
+To set up continuous deployment with Cloud Build:
 
-gcloud api-gateway gateways create video-face-swap-gateway \
-    --api=video-face-swap-api \
-    --api-config=video-face-swap-config \
-    --location=[REGION] \
-    --project=[PROJECT_ID]
-```
+1. **Connect your repository** to Cloud Build in the GCP Console
 
-## Testing the API
+2. **Create a trigger** with the following configuration:
+   - **Name**: video-face-swap-deploy
+   - **Event**: Push to branch
+   - **Source**: Your repository and branch
+   - **Configuration**: cloudbuild.yaml
+   - **Substitution variables**:
+     - _REGION: us-central1 (or your preferred region)
 
-Use the provided test client script to test the API:
+3. **Push changes to your repository** to trigger the pipeline
+
+## Testing the Deployment
+
+### Basic Health Check
 
 ```bash
-python test_client.py \
-    --api-url=https://video-face-swap-api-[REGION]-run.app \
-    --source=source_face.jpg \
-    --target=target_video.mp4 \
-    --output=output_video.mp4 \
-    --keep-fps
+curl https://YOUR_SERVICE_URL/health
 ```
 
-## API Documentation
+### Testing Face Swap
 
-### Endpoints
+```bash
+curl -X POST https://YOUR_SERVICE_URL/swap \
+  -F "source=@path/to/source_face.jpg" \
+  -F "target=@path/to/target_image.jpg" \
+  -F "output_format=png" \
+  -F "use_cloud_storage=true" \
+  --output result.png
+```
 
-- **POST /swap**: Swap faces in images or videos
-  - Request Body (multipart/form-data):
-    - `source`: Image file with a face (JPEG, PNG)
-    - `target`: Image or video file (JPEG, PNG, MP4, MOV, etc.)
-    - `output_format`: Output format for videos (mp4, webm, mov, avi)
-    - `keep_frames`: Keep temporary frames (boolean)
-    - `keep_fps`: Keep original FPS (boolean)
-    - `many_faces`: Process multiple faces (boolean)
-    - `skip_audio`: Skip audio in output (boolean)
-  - Response: The processed image or video file
+## Monitoring and Maintenance
 
-- **GET /health**: Check API health
-  - Response: `{"status": "healthy"}`
+### Viewing Logs
 
-## Performance Considerations
+```bash
+gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=video-face-swap-api" --limit=10
+```
 
-- **Memory Usage**: The container uses up to 4GB of memory for processing
-- **CPU Usage**: 2 CPUs allocated for faster processing
-- **Processing Time**: 
-  - Images: 2-5 seconds
-  - Videos: 1-2 seconds per frame depending on resolution
-- **Concurrency**: Set to 5 requests per instance
-- **Scalability**: Auto-scales from 0 to 10 instances based on load
+### Monitoring Dashboard
 
-## Monitoring and Logging
+1. Visit the [Cloud Monitoring Console](https://console.cloud.google.com/monitoring)
+2. Navigate to Dashboards
+3. Find the "Video Face Swap API Dashboard"
 
-- **Cloud Monitoring**: Set up dashboards for API metrics
-- **Cloud Logging**: Review logs for debugging and performance analysis
-- **Custom Metrics**: Track processing time, success rate, and error rate
+### Updating the Service
 
-## Security Considerations
+1. Build and push a new container image:
+   ```bash
+   docker build -t us-central1-docker.pkg.dev/YOUR_PROJECT_ID/video-face-swap/api:v2 .
+   docker push us-central1-docker.pkg.dev/YOUR_PROJECT_ID/video-face-swap/api:v2
+   ```
 
-- The API uses proper input validation
-- Temporary files are securely handled and cleaned up
-- Consider adding API authentication for production use
-- The model includes safety checks to prevent misuse
-
-## Cost Optimization
-
-- Cloud Run scales to zero when not in use
-- Temporary files are automatically deleted after processing
-- Consider batch processing for large workloads
-- Use regional resources to reduce network egress costs
+2. Update the Cloud Run service:
+   ```bash
+   cd terraform
+   terraform apply -var "project_id=YOUR_PROJECT_ID" \
+     -var "container_image_url=us-central1-docker.pkg.dev/YOUR_PROJECT_ID/video-face-swap/api:v2"
+   ```
 
 ## Troubleshooting
 
-- **Container fails to start**: Check memory allocation and dependencies
-- **Processing errors**: Verify input file formats and face detection
-- **Performance issues**: Monitor CPU/memory usage and adjust resources
-- **API gateway errors**: Check backend service configuration
+### Common Issues
+
+1. **403 Forbidden errors**: Check IAM permissions for the service account
+2. **Image not found**: Ensure the image path in Artifact Registry is correct
+3. **Cold start timeouts**: Adjust the minimum instances in terraform/variables.tf
+4. **High latency**: Consider increasing CPU and memory limits
+
+### Getting Help
+
+If you encounter issues:
+
+1. Check [Cloud Run logs](https://console.cloud.google.com/logs/query) for error messages
+2. Review the [architecture documentation](./architecture_design.md) for design insights
+3. Check the [GCP Status Dashboard](https://status.cloud.google.com/) for service disruptions
+
+## Cleanup
+
+To delete all deployed resources:
+
+```bash
+cd terraform
+terraform destroy -var "project_id=YOUR_PROJECT_ID"
+```
+
+Or use the cleanup option in the deployment script:
+
+```bash
+cd scripts
+./deploy.sh
+# Select option 5 for cleanup
+```

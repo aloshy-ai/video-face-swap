@@ -18,7 +18,7 @@ variable "container_image_url" {
 variable "api_min_instances" {
   description = "Minimum number of instances for Cloud Run"
   type        = number
-  default     = 0
+  default     = 1
 }
 
 variable "api_max_instances" {
@@ -31,4 +31,67 @@ variable "api_concurrency" {
   description = "Concurrency per Cloud Run instance"
   type        = number
   default     = 5
+}
+
+variable "memory_limit" {
+  description = "Memory limit for Cloud Run containers"
+  type        = string
+  default     = "4Gi"
+}
+
+variable "cpu_limit" {
+  description = "CPU limit for Cloud Run containers"
+  type        = string
+  default     = "2"
+}
+
+variable "timeout_seconds" {
+  description = "Maximum request duration in seconds"
+  type        = number
+  default     = 900
+}
+
+variable "vpc_connector" {
+  description = "VPC connector name for Cloud Run (optional)"
+  type        = string
+  default     = ""
+}
+
+variable "use_vpc_connector" {
+  description = "Whether to use VPC connector"
+  type        = bool
+  default     = false
+}
+
+variable "enable_cloud_profiler" {
+  description = "Whether to enable Google Cloud Profiler"
+  type        = bool
+  default     = false
+}
+
+variable "domain_name" {
+  description = "Domain name for the service (optional)"
+  type        = string
+  default     = ""
+}
+
+variable "use_custom_domain" {
+  description = "Whether to use custom domain"
+  type        = bool
+  default     = false
+}
+
+variable "enable_monitoring" {
+  description = "Whether to enable enhanced monitoring"
+  type        = bool
+  default     = true
+}
+
+variable "labels" {
+  description = "A map of labels to apply to resources"
+  type        = map(string)
+  default     = {
+    environment = "prod"
+    service     = "video-face-swap"
+  }
 }
