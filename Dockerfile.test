@@ -1,0 +1,32 @@
+FROM python:3.10-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    git \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Install minimal Python dependencies for testing
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+    flask>=2.3.2 \
+    gunicorn>=21.2.0
+
+# Create a simple test app
+COPY test_app.py .
+
+# Expose port for the API
+EXPOSE 8080
+
+# Run the API server using gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "test_app:app"]
