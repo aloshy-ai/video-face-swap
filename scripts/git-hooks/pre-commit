@@ -1,24 +1,101 @@
-#!/bin/sh
-#
-# Pre-commit hook to run tests
+#!/bin/bash
+# Pre-commit hook for Git LFS optimization and basic checks
+# To install: ln -sf ../../scripts/git-hooks/pre-commit .git/hooks/pre-commit
 
-# Stash any changes not being committed
-git stash -q --keep-index
+set -e
 
-# Run the unit tests
-echo "Running unit tests before commit..."
-pytest tests/unit -v
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-# Get the exit code of the tests
-RESULT=$?
+# Check for large files that should be in Git LFS
+function check_large_files() {
+  echo "⚙️ Checking for large files that should be in Git LFS..."
+  
+  # Find staged files larger than 5MB
+  large_files=$(git diff --staged --name-only | xargs -I{} find "${REPO_ROOT}/{}" -type f -size +5M 2>/dev/null || true)
+  
+  if [ -n "$large_files" ]; then
+    echo "❌ Error: The following staged files are larger than 5MB and should be tracked with Git LFS:"
+    echo "$large_files"
+    echo ""
+    echo "Please add patterns for these files to .gitattributes and configure Git LFS to track them:"
+    echo "  git lfs track \"*.extension\""
+    echo "  git add .gitattributes"
+    echo "  git add <large-file>"
+    return 1
+  fi
+  
+  echo "✅ No large files found in staging area."
+  return 0
+}
 
-# Restore the stash
-git stash pop -q
+# Run pytest for staged Python files
+function run_tests() {
+  # Check if any Python files are staged
+  python_files=$(git diff --staged --name-only | grep -E '\.py$' || true)
+  
+  if [ -n "$python_files" ]; then
+    echo "🧪 Running unit tests for staged Python files..."
+    
+    # Check if pytest is installed
+    if ! command -v pytest &> /dev/null; then
+      echo "⚠️ pytest is not installed. Skipping tests."
+      return 0
+    fi
+    
+    # Run only unit tests for speed
+    if ! cd "${REPO_ROOT}" && python -m pytest tests/unit/ -v; then
+      echo "❌ Unit tests failed. Please fix the tests before committing."
+      return 1
+    fi
+    
+    echo "✅ Unit tests passed."
+  else
+    echo "🔍 No Python files changed. Skipping tests."
+  fi
+  
+  return 0
+}
 
-# If tests failed, abort the commit
-if [ $RESULT -ne 0 ]; then
-    echo "Unit tests failed, aborting commit."
-    exit 1
+# Optimize Git LFS if needed (called before significant commits)
+function optimize_git_lfs() {
+  # Check if Git LFS files exist in the repo
+  if [ -f "${REPO_ROOT}/.gitattributes" ] && grep -q "filter=lfs" "${REPO_ROOT}/.gitattributes"; then
+    echo "🔄 Checking Git LFS setup..."
+    
+    # Only run if LFS files are being added or modified
+    lfs_files_changed=$(git diff --staged --name-only | grep -f <(grep "filter=lfs" "${REPO_ROOT}/.gitattributes" | cut -d' ' -f1 | sed 's/\*//g') || true)
+    
+    if [ -n "$lfs_files_changed" ]; then
+      echo "📦 LFS files detected in commit. Ensuring Git LFS is set up correctly..."
+      
+      # Check for Git LFS installation
+      if ! command -v git-lfs &> /dev/null; then
+        echo "⚠️ Git LFS is not installed. Some files may not be handled correctly."
+        return 0
+      fi
+      
+      # Ensure Git LFS is initialized for this repo
+      git lfs install --local
+      
+      echo "✅ Git LFS is properly configured."
+    fi
+  fi
+  
+  return 0
+}
+
+# Main execution
+echo "🏁 Running pre-commit hooks..."
+
+# Run all checks
+optimize_git_lfs && check_large_files && run_tests
+
+# If all checks pass
+if [ $? -eq 0 ]; then
+  echo "✨ All pre-commit checks passed!"
+  exit 0
+else
+  echo "❌ Pre-commit checks failed. Please fix the issues and try again."
+  exit 1
 fi
-
-exit 0

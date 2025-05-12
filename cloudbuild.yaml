@@ -1,7 +1,28 @@
 steps:
+# Clone repository with Git LFS optimization for models
+- name: 'gcr.io/cloud-builders/git'
+  id: 'clone-models'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      mkdir -p /workspace/models
+      echo "Cloning repository with Git LFS optimization..."
+      GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/spaces/ALSv/video-face-swap.git /workspace/huggingface
+      cd /workspace/huggingface
+      echo "Selectively pulling only required model files..."
+      git lfs pull --include="models/inswapper_128.onnx"
+      git lfs pull --include="models/detection_Resnet50_Final.pth"
+      mkdir -p /workspace/models
+      cp -r /workspace/huggingface/models/* /workspace/models/ 2>/dev/null || true
+      echo "Models directory contents:"
+      ls -la /workspace/models
+  timeout: '600s'
+
 # Build the container image with multi-stage optimization
 - name: 'gcr.io/cloud-builders/docker'
   id: 'build-image'
+  waitFor: ['clone-models']
   args:
     - 'build'
     - '-t'
@@ -15,7 +36,7 @@ steps:
     - '--cache-from'
     - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:latest'
     - '.'
-  timeout: '1800s'  # Extended timeout for model downloads during build
+  timeout: '1200s'  # Reduced timeout as model downloads are handled separately
 
 # Capture image size for logging and monitoring
 - name: 'gcr.io/cloud-builders/docker'

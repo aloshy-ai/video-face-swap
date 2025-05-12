@@ -191,7 +191,7 @@ This implementation includes several optimizations for GCP:
    - Multi-stage build for minimal image size
    - Git LFS optimization to exclude large model files from image
    - Layer caching for faster builds
-   - On-demand model downloading at runtime
+   - Selective model downloading using Git LFS
 
 2. **Cloud Run Configuration**:
    - CPU/memory limits tuned for workload
@@ -204,6 +204,25 @@ This implementation includes several optimizations for GCP:
    - Cloud Storage for temporary files
    - Lifecycle rules for automatic cleanup
    - Optimized file handling
+
+### Git LFS Optimization
+
+This repository uses Git LFS for large model files. For faster clones and builds:
+
+```bash
+# Clone with Git LFS optimization (no large files downloaded initially)
+GIT_LFS_SKIP_SMUDGE=1 git clone <repository-url>
+cd video-face-swap
+
+# Selectively download only needed model files
+./scripts/optimize-git-lfs.sh
+
+# Or pull specific models manually
+git lfs pull --include="models/inswapper_128.onnx"
+git lfs pull --include="models/detection_Resnet50_Final.pth"
+```
+
+For CI/CD pipelines, our optimized cloudbuild.yaml implements this pattern automatically.
 
 ## Monitoring and Observability
 
