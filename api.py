@@ -147,7 +147,27 @@ def upload_to_gcs(local_path, gcs_object_name=None):
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint with enhanced diagnostics"""
+    """Health check endpoint with enhanced diagnostics and model initialization status"""
+    global face_swapper, face_analyser
+    
+    # Only initialize models if not already done
+    if face_swapper is None or face_analyser is None:
+        try:
+            initialize_models()
+        except Exception as e:
+            logger.warning(f"Model initialization during health check failed: {str(e)}")
+            # Return 200 but indicate models are not ready yet - this allows startup probe to succeed
+            # while still indicating initialization is in progress
+            return jsonify({
+                "status": "initializing",
+                "timestamp": time.time(),
+                "version": os.environ.get('VERSION', 'development'),
+                "models_loaded": False,
+                "cloud_storage": STORAGE_BUCKET is not None,
+                "initialization_error": str(e)
+            })
+    
+    # Normal health response
     status = {
         "status": "healthy",
         "timestamp": time.time(),

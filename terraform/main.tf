@@ -162,22 +162,22 @@ resource "google_cloud_run_service" "video_face_swap_api" {
           value = var.project_id
         }
         
-        # Configure liveness and readiness probes
+        # Configure liveness and readiness probes with extended timeouts for model downloads
         startup_probe {
           http_get {
             path = "/health"
           }
-          initial_delay_seconds = 10
-          timeout_seconds      = 3
-          period_seconds       = 3
-          failure_threshold    = 3
+          initial_delay_seconds = 30       # Increased to allow more time for model downloads
+          timeout_seconds      = 10        # Increased for model initialization
+          period_seconds       = 15        # Check less frequently during startup
+          failure_threshold    = 6         # Allow more retry attempts
         }
         
         liveness_probe {
           http_get {
             path = "/health"
           }
-          initial_delay_seconds = 15
+          initial_delay_seconds = 60       # Increased delay after startup completes
           period_seconds       = 30
         }
       }
@@ -192,6 +192,8 @@ resource "google_cloud_run_service" "video_face_swap_api" {
           "autoscaling.knative.dev/minScale" = tostring(var.api_min_instances)
           "autoscaling.knative.dev/maxScale" = tostring(var.api_max_instances)
           "run.googleapis.com/client-name"   = "terraform"
+          "run.googleapis.com/startup-cpu-boost" = "true"  # Allocate more CPU during startup for faster model downloads
+          "run.googleapis.com/cpu-throttling" = "false"  # Prevent CPU throttling
         },
         var.use_vpc_connector ? {
           "run.googleapis.com/vpc-access-connector" = var.vpc_connector

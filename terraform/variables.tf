@@ -18,7 +18,7 @@ variable "container_image_url" {
 variable "api_min_instances" {
   description = "Minimum number of instances for Cloud Run"
   type        = number
-  default     = 1
+  default     = 1  # Keep at least one instance warm to avoid cold starts with model downloads
 }
 
 variable "api_max_instances" {
@@ -48,7 +48,7 @@ variable "cpu_limit" {
 variable "timeout_seconds" {
   description = "Maximum request duration in seconds"
   type        = number
-  default     = 900
+  default     = 1200  # Increased to 20 minutes to accommodate first-request model downloads
 }
 
 variable "vpc_connector" {

@@ -74,6 +74,10 @@ RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/* && \
 # Copy application code - no large files
 COPY --from=builder /build/roop /app/roop || echo "Copying roop directory failed, this is just a warning"
 COPY api.py .
+COPY scripts/startup-script.sh /app/startup-script.sh
+
+# Make startup script executable
+RUN chmod +x /app/startup-script.sh
 
 # Create a models directory for runtime downloads
 RUN mkdir -p /app/.models /app/.cache /app/.insightface
@@ -101,4 +105,5 @@ HEALTHCHECK --interval=30s --timeout=3s \
   CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Command to run the application
+ENTRYPOINT ["/app/startup-script.sh"]
 CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} --workers 1 --threads 8 api:app"]
