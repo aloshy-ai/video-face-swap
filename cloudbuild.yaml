@@ -1,11 +1,13 @@
 steps:
-# Build the container image with caching
+# Build the container image with multi-stage optimization
 - name: 'gcr.io/cloud-builders/docker'
   id: 'build-image'
   args:
     - 'build'
     - '-t'
     - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}'
+    - '--file'
+    - 'Dockerfile.optimized'
     - '--build-arg'
     - 'BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')'
     - '--build-arg'
@@ -16,6 +18,22 @@ steps:
     - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:latest'
     - '.'
   timeout: '1800s'  # Extended timeout for model downloads during build
+
+# Capture image size for logging and monitoring
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'image-size'
+  waitFor: ['build-image']
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      echo "Checking optimized image size:"
+      docker images ${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA} --format "{{.Size}}"
+      IMAGE_SIZE=$(docker images ${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA} --format "{{.Size}}")
+      echo "Image size: $IMAGE_SIZE"
+      
+      # Log this metric to Cloud Monitoring
+      echo "{\"name\": \"custom.googleapis.com/container/image_size\", \"value\": \"$IMAGE_SIZE\", \"labels\": {\"sha\": \"${SHORT_SHA}\"}}" > /workspace/image_size.json
 
 # Run container security scan 
 - name: 'gcr.io/cloud-builders/gcloud'
@@ -62,6 +80,49 @@ steps:
   id: 'push-latest'
   waitFor: ['tag-latest']
   args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:latest']
+
+# Set up lifecycle policy for repository cleanup
+- name: 'gcr.io/cloud-builders/gcloud'
+  id: 'setup-lifecycle-policy'
+  waitFor: ['push-latest']
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      # Set up a lifecycle policy to keep only the latest 5 images and delete older ones
+      cat > /workspace/lifecycle-policy.json << EOF
+      {
+        "rules": [
+          {
+            "action": {"type": "DELETE"},
+            "condition": {
+              "tagState": "TAGGED",
+              "tagPrefixes": [""],
+              "newerThan": {"days": 30},
+              "olderThan": {"days": 60}
+            },
+            "selection": {
+              "tagPrefixes": [""],
+              "orderBy": {"field": "CREATE_TIME", "direction": "DESC"},
+              "offsetIndex": 5
+            }
+          },
+          {
+            "action": {"type": "DELETE"},
+            "condition": {
+              "tagState": "UNTAGGED",
+              "olderThan": {"days": 7}
+            }
+          }
+        ]
+      }
+      EOF
+      
+      # Apply the lifecycle policy
+      gcloud artifacts repositories set-cleanup-policies video-face-swap \
+        --project=${PROJECT_ID} \
+        --location=${_REGION} \
+        --policy-file=/workspace/lifecycle-policy.json
 
 # Set up Terraform
 - name: 'hashicorp/terraform:1.5.7'
@@ -147,7 +208,7 @@ images:
 artifacts:
   objects:
     location: 'gs://${PROJECT_ID}-vfs-temp/build-artifacts/${BUILD_ID}/'
-    paths: ['workspace/scan_results.json', 'terraform/tfplan']
+    paths: ['workspace/scan_results.json', 'terraform/tfplan', 'workspace/lifecycle-policy.json', 'workspace/image_size.json']
 
 options:
   machineType: 'E2_HIGHCPU_8'  # Use a higher-performance machine for faster builds
