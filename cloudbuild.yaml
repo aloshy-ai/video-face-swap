@@ -61,8 +61,9 @@ steps:
   args: 
     - '-c'
     - |
-      pip install pytest pytest-cov pytest-mock requests-mock
-      python -m pytest tests/unit tests/integration -v
+      pip install pytest pytest-cov pytest-mock requests-mock pytest-env pytest-timeout
+      chmod +x ./scripts/run_tests.sh
+      ./scripts/run_tests.sh --unit --integration --ci
   timeout: '300s'
 
 # Push the container image to Artifact Registry
