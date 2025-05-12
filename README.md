@@ -1,79 +1,83 @@
-# Video Face Swap API
+# Video Face Swap API - Infrastructure as Code
 
-A containerized API service that provides face swapping capabilities for images and videos using AI, built on Google Cloud Platform.
-
-## Overview
-
-This service provides an API endpoint that allows clients to swap faces in images and videos with just a single reference face image. It's designed to be scalable, efficient, and easy to use, leveraging Google Cloud's serverless infrastructure.
-
-## Features
-
-- Face swapping in images and videos with a single API call
-- Supports various input and output formats
-- Scalable architecture using Google Cloud Run
-- Secure API management through API Gateway
-- Efficient handling of large files
+This repository contains the code for a containerized Video Face Swap API, implemented with infrastructure as code principles for Google Cloud Platform.
 
 ## Architecture
 
-This service is built on the following components:
+The application is built with the following components:
 
-- **API Layer**: Flask-based REST API
-- **AI Core**: InsightFace and Roop for face detection and swapping
-- **Infrastructure**: Google Cloud Run, Container Registry, and API Gateway
+- **Container**: The application is containerized using Docker
+- **API**: Flask-based API for face swapping functionality
+- **Storage**: Cloud Storage for temporary files
+- **Deployment**: Cloud Run for scalable, serverless deployment
+- **Registry**: Artifact Registry for container images
+- **CI/CD**: Cloud Build for continuous integration and deployment
+- **Organization Structure**: Deployed under the 'maas' folder in the GCP organization
+
+## Infrastructure as Code
+
+All infrastructure is defined as code using Terraform. The infrastructure code is located in the `terraform/` directory:
+
+- `main.tf`: Main Terraform configuration for all resources
+- `variables.tf`: Variable definitions
+- `terraform.tfvars`: Variable values
+
+This approach ensures that all infrastructure is versioned, reproducible, and can be deployed consistently across environments.
+
+## CI/CD Pipeline
+
+The CI/CD pipeline is defined in `cloudbuild.yaml` and performs the following steps:
+
+1. Build the container image
+2. Push the image to Artifact Registry
+3. Initialize Terraform
+4. Plan infrastructure changes
+5. Apply infrastructure changes
+
+## Deployment
+
+To deploy the application manually:
+
+1. Build the Docker image locally:
+   ```bash
+   docker build -t us-central1-docker.pkg.dev/video-face-swap-459615/video-face-swap/api:local .
+   ```
+
+2. Push the image to Artifact Registry:
+   ```bash
+   docker push us-central1-docker.pkg.dev/video-face-swap-459615/video-face-swap/api:local
+   ```
+
+3. Deploy the infrastructure with Terraform:
+   ```bash
+   cd terraform
+   terraform init
+   terraform apply -var "container_image_url=us-central1-docker.pkg.dev/video-face-swap-459615/video-face-swap/api:local"
+   ```
+
+For automatic deployments, push changes to the repository to trigger the Cloud Build pipeline.
 
 ## Repository Structure
 
 ```
 video-face-swap/
-├── Dockerfile               # Container definition
-├── api.py                   # Flask API implementation
-├── scripts/                 # Utility scripts
-│   └── test_client.py       # Test script for the API
-├── config/                  # Configuration files
-│   ├── cloudbuild.yaml      # CI/CD configuration
-│   ├── cloud-run-config.yaml # Cloud Run service config
-│   └── api-gateway-config.yaml # API Gateway config
-├── docs/                    # Documentation
-│   └── deployment_guide.md  # Deployment instructions
-└── models/                  # Directory for model files (Git LFS)
+├── Dockerfile              # Container definition
+├── api.py                  # API code
+├── cloudbuild.yaml         # CI/CD configuration
+├── terraform/              # Infrastructure as code
+│   ├── main.tf             # Main Terraform configuration
+│   ├── variables.tf        # Variable definitions
+│   └── terraform.tfvars    # Variable values
+└── README.md               # This file
 ```
 
-## Setup and Deployment
+## Why This Approach
 
-See [Deployment Guide](docs/deployment_guide.md) for detailed instructions.
+While Google Cloud provides Application Design Center (ADC) for visual infrastructure design, our implementation uses Terraform directly for several reasons:
 
-## Using Git LFS for Model Files
+1. **Reliability**: Direct Terraform usage provides maximum control over infrastructure
+2. **Flexibility**: Easier customization and integration with existing systems
+3. **Compatibility**: Works within our current folder structure under 'maas'
+4. **Maturity**: Uses proven, widely-adopted infrastructure as code practices
 
-This repository uses Git Large File Storage (LFS) to handle large model files. Make sure to install Git LFS before cloning:
-
-```bash
-# Install Git LFS
-git lfs install
-
-# Clone the repository
-git clone <repository-url>
-
-# Pull LFS files
-git lfs pull
-```
-
-## API Documentation
-
-### Endpoints
-
-- **POST /swap**: Swap faces in images or videos
-  - Takes a source image and target image/video
-  - Returns the processed file
-
-- **GET /health**: Health check endpoint
-  - Returns status of the service
-
-## License
-
-This project is proprietary software.
-
-## Acknowledgements
-
-- [InsightFace](https://github.com/deepinsight/insightface) for face detection and analysis
-- [Roop](https://github.com/s0md3v/roop) for face swapping capabilities
+This approach aligns with industry best practices for infrastructure as code while leveraging the existing Google Cloud organization structure.

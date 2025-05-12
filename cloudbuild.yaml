@@ -1,0 +1,42 @@
+steps:
+# Build the container image
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}', '.']
+  timeout: '1800s'  # Extended timeout for model downloads during build
+
+# Push the container image to Artifact Registry
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}']
+
+# Create a tag for latest
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['tag', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:latest']
+
+# Push the latest tag
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:latest']
+
+# Set up Terraform (download terraform if not installed in the builder)
+- name: 'gcr.io/cloud-builders/wget'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - |
+      wget https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip
+      unzip terraform_1.5.7_linux_amd64.zip
+      chmod +x terraform
+      mkdir -p /workspace/bin
+      mv terraform /workspace/bin/
+      export PATH=$PATH:/workspace/bin
+      cd terraform
+      /workspace/bin/terraform init
+      /workspace/bin/terraform apply -auto-approve -var "project_id=${PROJECT_ID}" -var "region=${_REGION}" -var "container_image_url=${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}"
+
+substitutions:
+  _REGION: us-central1  # Default region, can be overridden
+
+images:
+- '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:${SHORT_SHA}'
+- '${_REGION}-docker.pkg.dev/${PROJECT_ID}/video-face-swap/api:latest'
+
+timeout: '2700s'  # 45 minutes
