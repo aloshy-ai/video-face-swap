@@ -9,6 +9,7 @@ PROJECT_ID="video-face-swap-459615"
 REGION="us-central1"
 VERSION=$(date +%Y%m%d-%H%M%S)
 USE_OPTIMIZED=false
+TF_DIR="terraform"
 
 # Color variables
 RED='\033[0;31m'

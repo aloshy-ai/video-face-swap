@@ -1,0 +1,24 @@
+#!/bin/sh
+#
+# Pre-commit hook to run tests
+
+# Stash any changes not being committed
+git stash -q --keep-index
+
+# Run the unit tests
+echo "Running unit tests before commit..."
+pytest tests/unit -v
+
+# Get the exit code of the tests
+RESULT=$?
+
+# Restore the stash
+git stash pop -q
+
+# If tests failed, abort the commit
+if [ $RESULT -ne 0 ]; then
+    echo "Unit tests failed, aborting commit."
+    exit 1
+fi
+
+exit 0

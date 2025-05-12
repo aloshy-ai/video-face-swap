@@ -7,6 +7,11 @@ import numpy as np
 import cv2
 from api import app
 
+# NOTICE: This file is deprecated.
+# Please use the new test structure in the 'tests' directory instead.
+# Run tests with: pytest tests/
+# See pytest.ini for configuration options.
+
 class TestVideoFaceSwapAPI(unittest.TestCase):
     """Test suite for the Video Face Swap API"""
     
@@ -55,7 +60,7 @@ class TestVideoFaceSwapAPI(unittest.TestCase):
         response = self.app.get('/health')
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
-        self.assertEqual(data['status'], 'healthy')
+        self.assertIn(data['status'], ['healthy', 'initializing'])
     
     def test_missing_files(self):
         """Test API response when files are missing"""

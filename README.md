@@ -213,6 +213,65 @@ The deployment includes:
 - **Structured Logging**: Request details, processing times, and error traces
 - **Health Checks**: Comprehensive health and benchmark endpoints
 
+## Testing
+
+The project uses pytest for testing with a structured approach:
+
+```
+tests/
+├── unit/           # Unit tests for isolated components
+├── integration/    # Integration tests for combined functionality
+└── performance/    # Performance and load tests
+```
+
+### Running Tests
+
+Use the test runner script for convenience:
+
+```bash
+# Run all tests
+./scripts/run_tests.sh
+
+# Run only unit tests
+./scripts/run_tests.sh --unit
+
+# Run with coverage report
+./scripts/run_tests.sh --coverage
+
+# For CI environments 
+./scripts/run_tests.sh --ci
+```
+
+Or use pytest directly:
+
+```bash
+# Run all tests
+pytest tests/
+
+# Run specific test categories
+pytest tests/unit/
+pytest tests/integration/
+pytest tests/performance/
+
+# Run with coverage
+pytest --cov=api tests/
+```
+
+### Test Categories
+
+- **Unit Tests**: Fast, isolated tests for individual components
+- **Integration Tests**: Tests for combined components and endpoints
+- **Performance Tests**: Measure response times and resource usage
+
+### Pre-commit Hook
+
+To enable the pre-commit hook that runs unit tests before each commit:
+
+```bash
+ln -sf ../../scripts/git-hooks/pre-commit .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
 ## Security Features
 
 - **Container Scanning**: Automatic vulnerability scanning
