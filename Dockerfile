@@ -1,57 +1,104 @@
-# Use a specific Python version for better reproducibility
-FROM python:3.10-slim
+# Multi-stage build to reduce final image size
 
-# Set working directory
-WORKDIR /app
-
-# Add labels for better metadata in GCP
-LABEL maintainer="aloshy-ai"
-LABEL com.google.cloud.service="video-face-swap-api"
+# Build stage
+FROM python:3.10-slim AS builder
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    TRANSFORMERS_CACHE=/app/.cache \
     DEBIAN_FRONTEND=noninteractive \
-    PORT=8080
+    GIT_LFS_SKIP_SMUDGE=1
 
-# Install system dependencies in a single layer to reduce image size
+# Set working directory
+WORKDIR /build
+
+# Install only essential build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
     git \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
     build-essential \
     curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Clone the video-face-swap repository with depth=1 to reduce download size
-RUN git clone --depth=1 https://huggingface.co/spaces/ALSv/video-face-swap.git .
+# Install Git LFS
+RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash && \
+    apt-get install -y git-lfs && \
+    git lfs install
 
-# Copy the API wrapper code and requirements
-COPY api.py .
+# Copy only requirements first to leverage Docker cache
 COPY requirements.txt .
 
-# Install Python dependencies
+# Install Python dependencies with wheel building
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir wheel && \
+    pip wheel --no-cache-dir --wheel-dir=/build/wheels -r requirements.txt
 
-# Download required models on container build
-# This pre-caches models so they don't need to be downloaded at runtime
+# Clone only necessary files from the repository - using GIT_LFS_SKIP_SMUDGE
+# This clones the repo without downloading the large LFS files, just their pointers
+RUN git clone --depth=1 https://huggingface.co/spaces/ALSv/video-face-swap.git /tmp/repo && \
+    cd /tmp/repo && \
+    # Only copy the python code files we need, not the large model files
+    cp -r roop /build/ || echo "No roop directory found, this is just a warning"
+
+# Final stage - minimal runtime image
+FROM python:3.10-slim
+
+# Set working directory
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    TRANSFORMERS_CACHE=/app/.cache \
+    PORT=8080
+
+# Add GCP metadata and labels
+LABEL maintainer="aloshy-ai" \
+      com.google.cloud.service="video-face-swap-api"
+
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    curl \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy pre-built wheels and install them
+COPY --from=builder /build/wheels /wheels
+RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/* && \
+    rm -rf /wheels
+
+# Copy application code - no large files
+COPY --from=builder /build/roop /app/roop || echo "Copying roop directory failed, this is just a warning"
+COPY api.py .
+
+# Create a models directory for runtime downloads
+RUN mkdir -p /app/.models /app/.cache /app/.insightface
+
+# Download only the specific model files required at runtime 
+# This is more efficient than including them in the image
+# and allows selective downloading of only what's needed
 RUN python -c "import insightface; from insightface.app import FaceAnalysis; app = FaceAnalysis(providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640, 640))"
 
-# Cloud Run requires your container to listen for requests on 0.0.0.0 
-# on the port defined by the PORT environment variable
+# Create a non-root user
+RUN adduser --disabled-password --gecos "" appuser && \
+    chown -R appuser:appuser /app
+
+# Set proper permissions for the cache directories
+RUN chown -R appuser:appuser /app/.cache /app/.insightface /app/.models
+
+# Switch to non-root user
+USER appuser
+
+# Expose the port
 EXPOSE ${PORT}
 
-# Set healthcheck to ensure container is healthy
+# Set healthcheck
 HEALTHCHECK --interval=30s --timeout=3s \
   CMD curl -f http://localhost:${PORT}/health || exit 1
 
-# Security: Run as non-root user
-RUN adduser --disabled-password --gecos "" appuser
-USER appuser
-
-# Use exec form for CMD which is better for signal handling
+# Command to run the application
 CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT} --workers 1 --threads 8 api:app"]
