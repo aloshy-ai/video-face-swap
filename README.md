@@ -188,16 +188,17 @@ The API will return either:
 This implementation includes several optimizations for GCP:
 
 1. **Container Optimization**:
-   - Minimal base image
-   - Layer caching
-   - Fixed dependency versions
-   - Pre-loading models at build time
+   - Multi-stage build for minimal image size
+   - Git LFS optimization to exclude large model files from image
+   - Layer caching for faster builds
+   - On-demand model downloading at runtime
 
 2. **Cloud Run Configuration**:
    - CPU/memory limits tuned for workload
    - Instance concurrency optimization
-   - Startup/liveness probes
+   - Enhanced startup/liveness probes
    - Minimum instances for reduced cold starts
+   - CPU throttling disabled during startup
 
 3. **Storage Efficiency**:
    - Cloud Storage for temporary files
