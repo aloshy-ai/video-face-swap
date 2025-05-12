@@ -2,6 +2,10 @@
 
 This repository contains a production-ready implementation of a Video Face Swap API, built for Google Cloud Platform using Cloud Run, Artifact Registry, and Cloud Storage.
 
+## Credits and Attribution
+
+This project is built upon the foundation of the [video-face-swap](https://huggingface.co/spaces/ALSv/video-face-swap) model available on Huggingface, created by user ALSv. The core face-swapping technology is based on the [roop](https://github.com/s0md3v/roop) project, which provides the underlying algorithms for face detection, analysis, and swapping. We've adapted this technology to work as a scalable, production-ready service on Google Cloud Platform.
+
 ## Architecture
 
 ```mermaid
@@ -225,12 +229,32 @@ The deployment includes:
 
 ## License
 
-[Specify your license]
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+The core face-swapping functionality is based on:
+- [video-face-swap](https://huggingface.co/spaces/ALSv/video-face-swap) by ALSv on Huggingface
+- [roop](https://github.com/s0md3v/roop) project
+
+Please refer to these original projects for their respective licenses and terms of use.
 
 ## Contributing
 
-[Contribution guidelines]
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+Please ensure your code follows the project's coding style and includes appropriate tests.
 
 ## Project Status
 
-[Current status, roadmap, etc.]
+This project is actively maintained and in production use. Future enhancements planned include:
+
+- Advanced face detection and tracking capabilities
+- Support for batch processing of multiple videos
+- Enhanced privacy features and content moderation
+- Performance optimizations for longer videos
+- Integration with Vertex AI for more advanced AI capabilities
