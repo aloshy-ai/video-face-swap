@@ -1,0 +1,44 @@
+steps:
+# Build the container image
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'gcr.io/$PROJECT_ID/video-face-swap:$COMMIT_SHA', '.']
+  timeout: '1800s'  # Extended timeout for model downloads during build
+
+# Push the container image to Artifact Registry
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'gcr.io/$PROJECT_ID/video-face-swap:$COMMIT_SHA']
+
+# Deploy container image to Cloud Run
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: gcloud
+  args:
+  - 'run'
+  - 'deploy'
+  - 'video-face-swap-api'
+  - '--image=gcr.io/$PROJECT_ID/video-face-swap:$COMMIT_SHA'
+  - '--region=${_REGION}'
+  - '--platform=managed'
+  - '--memory=4Gi'
+  - '--cpu=2'
+  - '--min-instances=0'
+  - '--max-instances=10'
+  - '--concurrency=5'
+  - '--timeout=900s'  # 15 minute timeout for long-running video processing
+  - '--allow-unauthenticated'  # Remove if you want to require authentication
+
+# Create a tag for latest
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['tag', 'gcr.io/$PROJECT_ID/video-face-swap:$COMMIT_SHA', 'gcr.io/$PROJECT_ID/video-face-swap:latest']
+
+# Push the latest tag
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'gcr.io/$PROJECT_ID/video-face-swap:latest']
+
+substitutions:
+  _REGION: us-central1  # Default region, can be overridden
+
+images:
+- 'gcr.io/$PROJECT_ID/video-face-swap:$COMMIT_SHA'
+- 'gcr.io/$PROJECT_ID/video-face-swap:latest'
+
+timeout: '2700s'  # 45 minutes

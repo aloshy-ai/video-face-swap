@@ -1,0 +1,76 @@
+name: video-face-swap-api
+description: "Face swapping API service for images and videos"
+
+# Container configuration
+container:
+  image: gcr.io/PROJECT_ID/video-face-swap:latest
+  
+  # Resource limits
+  resources:
+    limits:
+      memory: 4Gi
+      cpu: 2.0
+    
+  # Environment variables
+  env:
+    - name: DEBUG
+      value: "False"
+    - name: LOG_LEVEL
+      value: "INFO"
+    - name: MAX_CONTENT_LENGTH
+      value: "104857600"  # 100MB max upload size
+    - name: TEMP_DIR
+      value: "/tmp"
+    - name: MODEL_CACHE_DIR
+      value: "/app/.cache"
+  
+  # Container ports
+  ports:
+    - containerPort: 8080
+      name: http1
+  
+  # Start-up probe
+  startupProbe:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 10
+  
+  # Liveness probe
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8080
+    periodSeconds: 60
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  # Readiness probe
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8080
+    periodSeconds: 15
+    timeoutSeconds: 5
+
+# Traffic and scaling
+traffic:
+  - type: TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST
+    percent: 100
+
+scaling:
+  minInstanceCount: 0
+  maxInstanceCount: 10
+  # CPU utilization target (0.6 = 60%)
+  cpuUtilization:
+    targetUtilization: 0.6
+
+# Execution configuration
+executionEnvironment: EXECUTION_ENVIRONMENT_GEN2
+timeoutSeconds: 900  # 15 minutes
+maxInstanceRequestConcurrency: 5
+allowUnauthenticated: true  # Set to false for production with auth
+serviceAccount: "video-face-swap-sa@PROJECT_ID.iam.gserviceaccount.com"

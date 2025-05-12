@@ -1,0 +1,138 @@
+swagger: '2.0'
+info:
+  title: Video Face Swap API
+  description: API for swapping faces in images and videos using AI technology
+  version: 1.0.0
+host: video-face-swap-api-gateway.endpoints.PROJECT_ID.cloud.goog
+schemes:
+  - https
+produces:
+  - application/json
+  - image/png
+  - video/mp4
+  - video/webm
+  - video/quicktime
+  - video/x-msvideo
+consumes:
+  - multipart/form-data
+  - application/json
+
+# Security definitions for API keys
+securityDefinitions:
+  api_key:
+    type: apiKey
+    name: key
+    in: query
+
+# Paths for API endpoints
+paths:
+  /api/v1/swap:
+    post:
+      summary: Swap faces in images or videos
+      description: |
+        Takes a source image containing a face and a target image or video,
+        then returns the processed output with the face swapped.
+      operationId: faceSwap
+      # Apply security - enable this for production
+      # security:
+      #   - api_key: []
+      x-google-backend:
+        address: https://video-face-swap-api-REGION-run.app/swap
+      consumes:
+        - multipart/form-data
+      parameters:
+        - name: source
+          in: formData
+          description: Source image with a face
+          required: true
+          type: file
+        - name: target
+          in: formData
+          description: Target image or video
+          required: true
+          type: file
+        - name: output_format
+          in: formData
+          description: Output format for videos
+          required: false
+          type: string
+          enum: [mp4, webm, mov, avi]
+          default: mp4
+        - name: keep_frames
+          in: formData
+          description: Keep temporary frames
+          required: false
+          type: boolean
+          default: false
+        - name: keep_fps
+          in: formData
+          description: Keep original FPS
+          required: false
+          type: boolean
+          default: true
+        - name: many_faces
+          in: formData
+          description: Process multiple faces
+          required: false
+          type: boolean
+          default: false
+        - name: skip_audio
+          in: formData
+          description: Skip audio in output
+          required: false
+          type: boolean
+          default: false
+      responses:
+        '200':
+          description: Successful operation
+          schema:
+            type: file
+        '400':
+          description: Invalid input
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+        '401':
+          description: Unauthorized
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+        '500':
+          description: Server error
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+      
+  /api/v1/health:
+    get:
+      summary: Check API health
+      description: Returns the health status of the API
+      operationId: healthCheck
+      x-google-backend:
+        address: https://video-face-swap-api-REGION-run.app/health
+      responses:
+        '200':
+          description: API is healthy
+          schema:
+            type: object
+            properties:
+              status:
+                type: string
+                example: "healthy"
+  
+  /api/v1/docs:
+    get:
+      summary: API Documentation
+      description: API Documentation in Swagger/OpenAPI format
+      operationId: apiDocs
+      x-google-backend:
+        address: https://video-face-swap-api-REGION-run.app/docs
+      responses:
+        '200':
+          description: API Documentation
